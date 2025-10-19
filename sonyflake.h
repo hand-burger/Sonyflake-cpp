@@ -21,23 +21,14 @@ public:
     Sonyflake(uint64_t machineId = 0) : m_machineId(machineId & ((1ULL << m_machineIdBits) - 1)) // mask to 16 bits
     {
         /* Precompute custom epoch */
-        std::tm t = {};
-        t.tm_year = 2025 - 1900; // Year since 1900
-        t.tm_mon = 0;
-        t.tm_mday = 1;
-        t.tm_hour = 0;
-        t.tm_min = 0;
-        t.tm_sec = 0;
-        std::time_t epoch_time = std::mktime(&t);
-        m_customEpoch = std::chrono::system_clock::now() +
-                        (std::chrono::system_clock::from_time_t(epoch_time) - std::chrono::system_clock::now());
+        m_customEpoch = std::chrono::steady_clock::now();
     }
 
     uint64_t GetUniqueId()
     {
         std::lock_guard<std::mutex> lock(m_mtx);
 
-        auto now = std::chrono::system_clock::now();
+        auto now = std::chrono::steady_clock::now();
         auto timestamp = static_cast<uint64_t>(std::chrono::duration_cast<ten_ms>(now - m_customEpoch).count());
 
         if (timestamp <= m_lastTimestamp) {
@@ -45,7 +36,7 @@ public:
             /* Wait until next 10ms tick if overflow so timestamps differ */
             if (m_sequenceNum == 0) {
                 m_lastTimestamp++;
-                std::this_thread::sleep_for(ten_ms(1));
+                std::this_thread::sleep_until(m_customEpoch + ten_ms(m_lastTimestamp));
             }
         } else {
             m_lastTimestamp = timestamp;
@@ -73,7 +64,7 @@ private:
     static constexpr uint32_t m_sequenceBits = 8;
     static constexpr uint32_t m_machineIdBits = 63 - m_timestampBits - m_sequenceBits;
 
-    std::chrono::system_clock::time_point m_customEpoch;
+    std::chrono::steady_clock::time_point m_customEpoch;
     uint64_t m_lastTimestamp = 0;
     uint16_t m_sequenceNum = 0;
     uint16_t m_machineId = 0;
